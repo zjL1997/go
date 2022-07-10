@@ -4,6 +4,7 @@
 
 package syntax
 
+// JazeLi Note： 所有的token类型都是正整数，标识操作数、括号和关键字等
 type token uint
 
 //go:generate stringer -type token -linecomment tokens.go

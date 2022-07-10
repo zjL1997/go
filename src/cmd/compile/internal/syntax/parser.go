@@ -14,6 +14,7 @@ import (
 const debug = false
 const trace = false
 
+// JazeLi Note：语法分析文件，用于将token转换为AST
 type parser struct {
 	file  *PosBase
 	errh  ErrorHandler
@@ -377,6 +378,17 @@ func (p *parser) print(msg string) {
 // nil; all others are expected to return a valid non-nil node.
 
 // SourceFile = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
+/**
+源文件对应的文法：
+- 每个源文件都要包含package（PackageClause）；
+- import（ImportDecl）可选
+- 顶层声明（TopLevelDecl）可选，顶层声明有五种类型：
+	- 常量: ConstDecl
+	- 类型: TypeDecl
+	- 变量: VarDecl
+	- 函数: FunctionDecl
+	- 方法:
+*/
 func (p *parser) fileOrNil() *File {
 	if trace {
 		defer p.trace("file")()
@@ -406,21 +418,22 @@ func (p *parser) fileOrNil() *File {
 	}
 
 	// { TopLevelDecl ";" }
+	// 顶层声明的类型
 	for p.tok != _EOF {
 		switch p.tok {
-		case _Const:
+		case _Const: // 常量
 			p.next()
 			f.DeclList = p.appendGroup(f.DeclList, p.constDecl)
 
-		case _Type:
+		case _Type: // 类型
 			p.next()
 			f.DeclList = p.appendGroup(f.DeclList, p.typeDecl)
 
-		case _Var:
+		case _Var: // 变量
 			p.next()
 			f.DeclList = p.appendGroup(f.DeclList, p.varDecl)
 
-		case _Func:
+		case _Func: // 函数&方法
 			p.next()
 			if d := p.funcDeclOrNil(); d != nil {
 				f.DeclList = append(f.DeclList, d)

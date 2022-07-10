@@ -27,7 +27,9 @@ const (
 	directives                  // call handler for directives only
 )
 
+// JazeLi Note：词法解析阶段会将源代码文件扫描为scanner结构体
 type scanner struct {
+	// 源文件结构体
 	source
 	mode   uint
 	nlsemi bool // if set '\n' and EOF translate to ';'
@@ -35,12 +37,13 @@ type scanner struct {
 	// current token, valid after calling next()
 	line, col uint
 	blank     bool // line is blank up to col
-	tok       token
-	lit       string   // valid if tok is _Name, _Literal, or _Semi ("semicolon", "newline", or "EOF"); may be malformed if bad is true
-	bad       bool     // valid if tok is _Literal, true if a syntax error occurred, lit may be malformed
-	kind      LitKind  // valid if tok is _Literal
-	op        Operator // valid if tok is _Operator, _Star, _AssignOp, or _IncOp
-	prec      int      // valid if tok is _Operator, _Star, _AssignOp, or _IncOp
+	// 当前被扫描到的token
+	tok  token
+	lit  string   // valid if tok is _Name, _Literal, or _Semi ("semicolon", "newline", or "EOF"); may be malformed if bad is true
+	bad  bool     // valid if tok is _Literal, true if a syntax error occurred, lit may be malformed
+	kind LitKind  // valid if tok is _Literal
+	op   Operator // valid if tok is _Operator, _Star, _AssignOp, or _IncOp
+	prec int      // valid if tok is _Operator, _Star, _AssignOp, or _IncOp
 }
 
 func (s *scanner) init(src io.Reader, errh func(line, col uint, msg string), mode uint) {
@@ -85,6 +88,7 @@ func (s *scanner) setLit(kind LitKind, ok bool) {
 // If the scanner mode includes the directives (but not the comments)
 // flag, only comments containing a //line, /*line, or //go: directive
 // are reported, in the same way as regular comments.
+// JazeLi Note：词法分析由该方法驱动
 func (s *scanner) next() {
 	nlsemi := s.nlsemi
 	s.nlsemi = false
@@ -94,6 +98,7 @@ redo:
 	s.stop()
 	startLine, startCol := s.pos()
 	for s.ch == ' ' || s.ch == '\t' || s.ch == '\n' && !nlsemi || s.ch == '\r' {
+		// JazeLi Note：获取文件中最近的未被解析的字符
 		s.nextch()
 	}
 
