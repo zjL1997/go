@@ -872,6 +872,7 @@ func maplit(n *Node, m *Node, init *Nodes) {
 	init.Append(a)
 }
 
+// JazeLi Note：负责初始化字面量的函数，在中间代码生成阶段之前执行
 func anylit(n *Node, var_ *Node, init *Nodes) {
 	t := n.Type
 	switch n.Op {
@@ -911,11 +912,13 @@ func anylit(n *Node, var_ *Node, init *Nodes) {
 		var_ = typecheck(var_, ctxExpr|ctxAssign)
 		anylit(n.Left, var_, init)
 
+	// 字面量数组，即arr1 := {1, 2, 3}
 	case OSTRUCTLIT, OARRAYLIT:
 		if !t.IsStruct() && !t.IsArray() {
 			Fatalf("anylit: not struct/array")
 		}
 
+		// 1.当字面量元素大于4个，将数组元素分配到静态区，在运行时取出拷贝到栈上
 		if var_.isSimpleName() && n.List.Len() > 4 {
 			// lay out static data
 			vstat := staticname(t)
@@ -938,7 +941,7 @@ func anylit(n *Node, var_ *Node, init *Nodes) {
 			fixedlit(inInitFunction, initKindDynamic, n, var_, init)
 			break
 		}
-
+		// 2.当字面量元素个数 < 4，直接分配到栈上
 		var components int64
 		if n.Op == OARRAYLIT {
 			components = t.NumElem()

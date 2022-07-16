@@ -324,6 +324,12 @@ func indexlit(n *Node) *Node {
 
 // The result of typecheck1 MUST be assigned back to n, e.g.
 // 	n.Left = typecheck1(n.Left, top)
+/**
+JazeLi Note：校验入参
+	1、验证访问数组的索引：用于在编译期的静态类型检查中判断数组越界
+	2、校验切片大小及容量：使用make关键字创建切片时会经过该校验过程
+*/
+
 func typecheck1(n *Node, top int) (res *Node) {
 	if enableTrace && trace {
 		defer tracePrint("typecheck1", n)(&res)
@@ -1025,14 +1031,15 @@ func typecheck1(n *Node, top int) (res *Node) {
 			} else if t.IsSlice() {
 				why = "slice"
 			}
-
+			// 索引不是整数
 			if n.Right.Type != nil && !n.Right.Type.IsInteger() {
 				yyerror("non-integer %s index %v", why, n.Right)
 				break
 			}
-
+			// 索引不符合条件
 			if !n.Bounded() && Isconst(n.Right, CTINT) {
 				x := n.Right.Int64()
+				// 索引为负数
 				if x < 0 {
 					yyerror("invalid %s index %v (index must be non-negative)", why, n.Right)
 				} else if t.IsArray() && x >= t.NumElem() {
@@ -1666,7 +1673,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 				n = stringtoruneslit(n)
 			}
 		}
-
+	// make输入参数校验
 	case OMAKE:
 		ok |= ctxExpr
 		args := n.List.Slice()
@@ -1691,7 +1698,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 			yyerror("cannot make type %v", t)
 			n.Type = nil
 			return n
-
+		// 使用make创建slice的校验
 		case TSLICE:
 			if i >= len(args) {
 				yyerror("missing len argument to make(%v)", t)
@@ -1717,6 +1724,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 				n.Type = nil
 				return n
 			}
+			// 保证len < cap
 			if Isconst(l, CTINT) && r != nil && Isconst(r, CTINT) && l.Val().U.(*Mpint).Cmp(r.Val().U.(*Mpint)) > 0 {
 				yyerror("len larger than cap in make(%v)", t)
 				n.Type = nil
@@ -1725,6 +1733,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 
 			n.Left = l
 			n.Right = r
+			// 最后将OMAKE转换为OMAKESLICE节点，进入中间代码生成阶段
 			n.Op = OMAKESLICE
 
 		case TMAP:
@@ -2752,6 +2761,7 @@ func pushtype(n *Node, t *types.Type) *Node {
 
 // The result of typecheckcomplit MUST be assigned back to n, e.g.
 // 	n.Left = typecheckcomplit(n.Left)
+// JazeLi Note：推导[...]T声明的数组大小
 func typecheckcomplit(n *Node) (res *Node) {
 	if enableTrace && trace {
 		defer tracePrint("typecheckcomplit", n)(&res)
@@ -2804,6 +2814,7 @@ func typecheckcomplit(n *Node) (res *Node) {
 		n.Type = nil
 
 	case TARRAY:
+		// 遍历来获取数组元素个数
 		typecheckarraylit(t.Elem(), t.NumElem(), n.List.Slice(), "array literal")
 		n.Op = OARRAYLIT
 		n.Right = nil

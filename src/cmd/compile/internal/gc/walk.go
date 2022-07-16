@@ -436,6 +436,7 @@ func convFuncName(from, to *types.Type) (fnname string, needsaddr bool) {
 
 // The result of walkexpr MUST be assigned back to n, e.g.
 // 	n.Left = walkexpr(n.Left, init)
+// JazeLi Note：中间代码生成阶段对AST上不同节点的处理方式
 func walkexpr(n *Node, init *Nodes) *Node {
 	if n == nil {
 		return n
@@ -1312,7 +1313,9 @@ opswitch:
 			fn = substArgTypes(fn, hmapType, t.Key(), t.Elem())
 			n = mkcall1(fn, n.Type, init, typename(n.Type), conv(hint, argtype), h)
 		}
-
+	// 中间代码生成阶段对OMAKESLICE节点的处理
+	// 1、检查切片大小和容量是否足够小
+	// 2、切片是否发生了逃逸，最终在堆上初始化
 	case OMAKESLICE:
 		l := n.Left
 		r := n.Right

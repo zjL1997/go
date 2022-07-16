@@ -1968,6 +1968,12 @@ type stringHeader struct {
 // Moreover, the Data field is not sufficient to guarantee the data
 // it references will not be garbage collected, so programs must keep
 // a separate, correctly typed pointer to the underlying data.
+/**
+JazeLi Note：Slice运行期对应的结构体类型
+	- data：指向数组的指针
+	- Len：当前切片的长度
+	- Cap：当前切片的容量，Data数组长度
+*/
 type SliceHeader struct {
 	Data uintptr
 	Len  int

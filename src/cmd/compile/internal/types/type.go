@@ -470,17 +470,27 @@ func New(et EType) *Type {
 }
 
 // NewArray returns a new fixed-length array Type.
+/**
+JazeLi Note：数组在编译期创建时对应的函数
+1、当使用[10]T创建数组时，无需进行上限推导，在经过类型检查后就会被提取，随后执行该方法
+	- elem：数组元素类型
+	- bound：数组长度
+2、当使用[...]T创建数组时，需要进行上限推导
+	- 上限推导：gc.typecheckcomplit
+*/
 func NewArray(elem *Type, bound int64) *Type {
 	if bound < 0 {
 		Fatalf("NewArray: invalid bound %v", bound)
 	}
 	t := New(TARRAY)
 	t.Extra = &Array{Elem: elem, Bound: bound}
+	// 根据元素类型判断数组是否需要分配到堆上，对应函数：gc.anylit
 	t.SetNotInHeap(elem.NotInHeap())
 	return t
 }
 
 // NewSlice returns the slice Type with element type elem.
+// JazeLi Note：编译期间用于创建切片类型的函数
 func NewSlice(elem *Type) *Type {
 	if t := elem.Cache.slice; t != nil {
 		if t.Elem() != elem {
@@ -490,8 +500,11 @@ func NewSlice(elem *Type) *Type {
 	}
 
 	t := New(TSLICE)
+	// slice的元素类型都是在编译期确定的，编译期确定了类型后，将类型存储在Extra字段
+	// 供程序在运行时动态获取
 	t.Extra = Slice{Elem: elem}
 	elem.Cache.slice = t
+	// 编译期的切片类型是Slice的，但是在运行时切片由reflect.SliceHeader表示
 	return t
 }
 
