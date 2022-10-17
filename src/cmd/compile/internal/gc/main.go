@@ -141,6 +141,7 @@ var nowritebarrierrecCheck *nowritebarrierrecChecker
 // Main parses flags and Go source files specified in the command-line
 // arguments, type-checks the parsed Go package, compiles functions to machine
 // code, and finally writes the compiled package definition to disk.
+// JazeLi ：编译器入口
 func Main(archInit func(*Arch)) {
 	timings.Start("fe", "init")
 
@@ -206,6 +207,7 @@ func Main(archInit func(*Arch)) {
 	smallFrames := false
 	jsonLogOpt := ""
 
+	// 更新编译选项和配置
 	flag.BoolVar(&compiling_runtime, "+", false, "compiling runtime")
 	flag.BoolVar(&compiling_std, "std", false, "compiling standard library")
 	objabi.Flagcount("%", "debug non-static initializers", &Debug['%'])
@@ -539,6 +541,7 @@ func Main(archInit func(*Arch)) {
 	timings.Start("fe", "loadsys")
 	loadsys()
 
+	// 1.对于输入的文件进行词法和语法分析得到对应的抽象语法树
 	timings.Start("fe", "parse")
 	lines := parseFiles(flag.Args())
 	timings.Stop()
@@ -561,6 +564,8 @@ func Main(archInit func(*Arch)) {
 	//   TODO(gri) Remove this again once we have a fix for #25838.
 
 	// Don't use range--typecheck can add closures to xtop.
+	// 2.对生成的抽象语法树进行检查，共分为九个阶段
+	// 2.1 检查常量、类型和函数的类型
 	timings.Start("fe", "typecheck", "top1")
 	for i := 0; i < len(xtop); i++ {
 		n := xtop[i]
@@ -573,6 +578,7 @@ func Main(archInit func(*Arch)) {
 	//   To check interface assignments, depends on phase 1.
 
 	// Don't use range--typecheck can add closures to xtop.
+	// 2.2 处理变量的赋值
 	timings.Start("fe", "typecheck", "top2")
 	for i := 0; i < len(xtop); i++ {
 		n := xtop[i]
@@ -583,6 +589,7 @@ func Main(archInit func(*Arch)) {
 
 	// Phase 3: Type check function bodies.
 	// Don't use range--typecheck can add closures to xtop.
+	// 2.3 对函数的主体进行类型检查
 	timings.Start("fe", "typecheck", "func")
 	var fcount int64
 	for i := 0; i < len(xtop); i++ {
@@ -615,6 +622,7 @@ func Main(archInit func(*Arch)) {
 	// Phase 4: Decide how to capture closed variables.
 	// This needs to run before escape analysis,
 	// because variables captured by value do not escape.
+	// 2.4决定如何捕获变量
 	timings.Start("fe", "capturevars")
 	for _, n := range xtop {
 		if n.Op == ODCLFUNC && n.Func.Closure != nil {
@@ -631,6 +639,7 @@ func Main(archInit func(*Arch)) {
 	}
 
 	// Phase 5: Inlining
+	// 2.5 检查内联函数的类型
 	timings.Start("fe", "inlining")
 	if Debug_typecheckinl != 0 {
 		// Typecheck imported function bodies if debug['l'] > 1,
@@ -671,6 +680,7 @@ func Main(archInit func(*Arch)) {
 	// or else the stack copier will not update it.
 	// Large values are also moved off stack in escape analysis;
 	// because large values may contain pointers, it must happen early.
+	// 2.6 逃逸分析
 	timings.Start("fe", "escapes")
 	escapes(xtop)
 
@@ -685,6 +695,7 @@ func Main(archInit func(*Arch)) {
 	// Phase 7: Transform closure bodies to properly reference captured variables.
 	// This needs to happen before walk, because closures must be transformed
 	// before walk reaches a call of a closure.
+	// 2.7 将闭包的主体转换成引用的捕获变量
 	timings.Start("fe", "xclosures")
 	for _, n := range xtop {
 		if n.Op == ODCLFUNC && n.Func.Closure != nil {
@@ -706,6 +717,7 @@ func Main(archInit func(*Arch)) {
 
 	// Phase 8: Compile top level functions.
 	// Don't use range--walk can add functions to xtop.
+	// 2.8 编译顶层函数
 	timings.Start("be", "compilefuncs")
 	fcount = 0
 	for i := 0; i < len(xtop); i++ {
@@ -740,6 +752,7 @@ func Main(archInit func(*Arch)) {
 	}
 
 	// Phase 9: Check external declarations.
+	// 2.9 检查外部依赖的声明
 	timings.Start("be", "externaldcls")
 	for i, n := range externdcl {
 		if n.Op == ONAME {

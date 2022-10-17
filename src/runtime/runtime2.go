@@ -197,14 +197,16 @@ type funcval struct {
 	// variable-size, fn-specific data here
 }
 
-type iface struct {
-	tab  *itab
-	data unsafe.Pointer
+// JazeLi ：带有一组方法的接口
+type iface struct { // 16字节，每个指针大小为8字节
+	tab  *itab          //
+	data unsafe.Pointer // 指向底层数据的指针
 }
 
-type eface struct {
-	_type *_type
-	data  unsafe.Pointer
+// JazeLi ：不带任何方法的接口
+type eface struct { // 16字节
+	_type *_type         // 类型
+	data  unsafe.Pointer // 指向底层数据的指针
 }
 
 func efaceOf(ep *interface{}) *eface {
@@ -400,7 +402,9 @@ type g struct {
 	// stackguard1 is the stack pointer compared in the C stack growth prologue.
 	// It is stack.lo+StackGuard on g0 and gsignal stacks.
 	// It is ~0 on other goroutine stacks, to trigger a call to morestackc (and crash).
-	stack       stack   // offset known to runtime/cgo
+	// 当前协程的栈内存范围
+	stack stack // offset known to runtime/cgo
+	// 用于调度器抢占式调度
 	stackguard0 uintptr // offset known to liblink
 	stackguard1 uintptr // offset known to liblink
 
@@ -808,12 +812,13 @@ type funcinl struct {
 // allocated in non-garbage-collected memory
 // Needs to be in sync with
 // ../cmd/compile/internal/gc/reflect.go:/^func.dumptabs.
-type itab struct {
+type itab struct { // 32字节
 	inter *interfacetype
-	_type *_type
+	_type *_type // 用于表示类型
 	hash  uint32 // copy of _type.hash. Used for type switches.
 	_     [4]byte
-	fun   [1]uintptr // variable sized. fun[0]==0 means _type does not implement inter.
+	// 动态大小的数组，用于动态派发的虚函数表，存储一组函数指针
+	fun [1]uintptr // variable sized. fun[0]==0 means _type does not implement inter.
 }
 
 // Lock-free stack node.

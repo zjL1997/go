@@ -17,8 +17,9 @@ import (
 // Wait can be used to block until all goroutines have finished.
 //
 // A WaitGroup must not be copied after first use.
+// JazeLi ：等待一组Goroutine执行完毕
 type WaitGroup struct {
-	noCopy noCopy
+	noCopy noCopy // 禁止拷贝
 
 	// 64-bit value: high 32 bits are counter, low 32 bits are waiter count.
 	// 64-bit atomic operations require 64-bit alignment, but 32-bit
@@ -50,6 +51,7 @@ func (wg *WaitGroup) state() (statep *uint64, semap *uint32) {
 // If a WaitGroup is reused to wait for several independent sets of events,
 // new Add calls must happen after all previous Wait calls have returned.
 // See the WaitGroup example.
+// JazeLi ：
 func (wg *WaitGroup) Add(delta int) {
 	statep, semap := wg.state()
 	if race.Enabled {
@@ -61,6 +63,7 @@ func (wg *WaitGroup) Add(delta int) {
 		race.Disable()
 		defer race.Enable()
 	}
+	// 加到计数器中
 	state := atomic.AddUint64(statep, uint64(delta)<<32)
 	v := int32(state >> 32)
 	w := uint32(state)

@@ -7,7 +7,7 @@ package syntax
 type token uint
 
 //go:generate stringer -type token -linecomment
-
+// JazeLi ：go支持的所有token类型
 const (
 	_    token = iota
 	_EOF       // EOF

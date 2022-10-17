@@ -34,6 +34,7 @@ import (
 // Type values are comparable, such as with the == operator,
 // so they can be used as map keys.
 // Two Type values are equal if they represent identical types.
+// JazeLi ：通过reflect.TypeOf()得到的数据类型信息
 type Type interface {
 	// Methods applicable to all types.
 
@@ -299,6 +300,7 @@ const (
 // It is embedded in other struct types.
 //
 // rtype must be kept in sync with ../runtime/type.go:/^type._type.
+// 该结构体实现了 reflect.Type 接口
 type rtype struct {
 	size       uintptr
 	ptrdata    uintptr // number of bytes in the type that can contain pointers
@@ -679,6 +681,7 @@ type nameOff int32 // offset to a name
 type typeOff int32 // offset to an *rtype
 type textOff int32 // offset from top of text section
 
+// JazeLi ：rtype实现了reflect.Type接口
 func (t *rtype) nameOff(off nameOff) name {
 	return name{(*byte)(resolveNameOff(unsafe.Pointer(t), int32(off)))}
 }
@@ -1363,7 +1366,9 @@ func (t *structType) FieldByName(name string) (f StructField, present bool) {
 // TypeOf returns the reflection Type that represents the dynamic type of i.
 // If i is a nil interface value, TypeOf returns nil.
 func TypeOf(i interface{}) Type {
+	// 1.将传入的变量转换为emptyInterface
 	eface := *(*emptyInterface)(unsafe.Pointer(&i))
+	// 2.获取emptyInterface中存储的类型信息
 	return toType(eface.typ)
 }
 
@@ -1427,13 +1432,16 @@ func fnv1(x uint32, list ...byte) uint32 {
 	return x
 }
 
+// JazeLi ：判断某一结构体是否实现了接口的反射方法
 func (t *rtype) Implements(u Type) bool {
+	// 1.要求传入值必须是一个接口
 	if u == nil {
 		panic("reflect: nil type passed to Type.Implements")
 	}
 	if u.Kind() != Interface {
 		panic("reflect: non-interface type passed to Type.Implements")
 	}
+	// 2.调用私有方法判断传入值和调用者之间是否存在实现关系
 	return implements(u.(*rtype), t)
 }
 
@@ -1457,11 +1465,13 @@ func (t *rtype) Comparable() bool {
 	return t.equal != nil
 }
 
+// JazeLi ：T为接口，V为判断是否实现了接口的对象
 // implements reports whether the type V implements the interface type T.
 func implements(T, V *rtype) bool {
 	if T.Kind() != Interface {
 		return false
 	}
+	// 1.所有结构体都实现了空接口
 	t := (*interfaceType)(unsafe.Pointer(T))
 	if len(t.methods) == 0 {
 		return true

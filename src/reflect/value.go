@@ -178,6 +178,7 @@ func methodName() string {
 }
 
 // emptyInterface is the header for an interface{} value.
+// JazeLi ：空接口对应的数据类型
 type emptyInterface struct {
 	typ  *rtype
 	word unsafe.Pointer
@@ -315,6 +316,7 @@ func (v Value) CanSet() bool {
 // type of the function's corresponding input parameter.
 // If v is a variadic function, Call creates the variadic slice parameter
 // itself, copying in the corresponding values.
+// JazeLi ：通过反射调用对象访问
 func (v Value) Call(in []Value) []Value {
 	v.mustBe(Func)
 	v.mustBeExported()
@@ -338,12 +340,14 @@ var callGC bool // for testing; see TestCallMethodJump
 
 func (v Value) call(op string, in []Value) []Value {
 	// Get function pointer, type.
+	// 1.取出当前的函数指针
 	t := (*funcType)(unsafe.Pointer(v.typ))
 	var (
 		fn       unsafe.Pointer
 		rcvr     Value
 		rcvrtype *rtype
 	)
+	// 2.若函数指针是方法，则methodReceiver获取方法的接受者和函数指针
 	if v.flag&flagMethod != 0 {
 		rcvr = v
 		rcvrtype, t, fn = methodReceiver(op, v, int(v.flag)>>flagMethodShift)
@@ -1529,13 +1533,16 @@ func (v Value) send(x Value, nb bool) (selected bool) {
 // Set assigns x to the value v.
 // It panics if CanSet returns false.
 // As in Go, x's value must be assignable to v's type.
+// JazeLi ：通过获取的Value去更新反射对象
 func (v Value) Set(x Value) {
+	// 1.检查当前反射独享是否是可以被设置的，以及字段是否是对外公开的
 	v.mustBeAssignable()
 	x.mustBeExported() // do not let unexported x leak
 	var target unsafe.Pointer
 	if v.kind() == Interface {
 		target = v.ptr
 	}
+	// 2.返回一个新的反射对象，覆盖原有的反射变量
 	x = x.assignTo("reflect.Set", v.typ, target)
 	if x.flag&flagIndir != 0 {
 		typedmemmove(v.typ, v.ptr, x.ptr)
@@ -1951,9 +1958,10 @@ func (v Value) UnsafeAddr() uintptr {
 // Moreover, the Data field is not sufficient to guarantee the data
 // it references will not be garbage collected, so programs must keep
 // a separate, correctly typed pointer to the underlying data.
+// JazeLi ：字符串在运行时对应的数据结构
 type StringHeader struct {
-	Data uintptr
-	Len  int
+	Data uintptr // 指向字节数组的指针
+	Len  int     // 数组大小
 }
 
 // stringHeader is a safe version of StringHeader used within this package.
@@ -2382,18 +2390,20 @@ func NewAt(typ Type, p unsafe.Pointer) Value {
 // For a conversion to an interface type, target is a suggested scratch space to use.
 // target must be initialized memory (or nil).
 func (v Value) assignTo(context string, dst *rtype, target unsafe.Pointer) Value {
+	// 1.根据v创建Value对象
 	if v.flag&flagMethod != 0 {
 		v = makeMethodValue(context, v)
 	}
 
 	switch {
+	// 2.两个反射对象可以直接替换，会直接返回目标反射对象
 	case directlyAssignable(dst, v.typ):
 		// Overwrite type so that they match.
 		// Same memory layout, so no harm done.
 		fl := v.flag&(flagAddr|flagIndir) | v.flag.ro()
 		fl |= flag(dst.Kind())
 		return Value{dst, v.ptr, fl}
-
+	// 3.当前反射对象是接口并且目标对象实现了接口，将目标对象包装成接口值
 	case implements(dst, v.typ):
 		if target == nil {
 			target = unsafe_New(dst)

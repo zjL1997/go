@@ -29,6 +29,7 @@ const (
 	debugChan = false
 )
 
+// JazeLi ：Channel在运行时对应的内部表示
 type hchan struct {
 	qcount   uint           // total data in the queue
 	dataqsiz uint           // size of the circular queue
@@ -38,8 +39,9 @@ type hchan struct {
 	elemtype *_type // element type
 	sendx    uint   // send index
 	recvx    uint   // receive index
-	recvq    waitq  // list of recv waiters
-	sendq    waitq  // list of send waiters
+
+	recvq waitq // list of recv waiters
+	sendq waitq // list of send waiters
 
 	// lock protects all fields in hchan, as well as several
 	// fields in sudogs blocked on this channel.
@@ -90,15 +92,17 @@ func makechan(t *chantype, size int) *hchan {
 	// TODO(dvyukov,rlh): Rethink when collector can move allocated objects.
 	var c *hchan
 	switch {
+	// 1.创建没有缓冲区的chan，直接使用mallocgc分配一段连续的内存空间即可
 	case mem == 0:
 		// Queue or element size is zero.
 		c = (*hchan)(mallocgc(hchanSize, nil, true))
 		// Race detector uses this location for synchronization.
 		c.buf = c.raceaddr()
+	// 2.chan存储的数据类型存在指针引用，将chan和底层数组同时分配一段连续的内存空间
 	case elem.ptrdata == 0:
 		// Elements do not contain pointers.
 		// Allocate hchan and buf in one call.
-		c = (*hchan)(mallocgc(hchanSize+mem, nil, true))
+		c = (*hchan)(mallocgc(hchanSize+mem, nil, true)) // 创建在堆上
 		c.buf = add(unsafe.Pointer(c), hchanSize)
 	default:
 		// Elements contain pointers.
@@ -140,6 +144,7 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
  * the operation; we'll see that it's now closed.
  */
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+	// 1.前置检查，要写入的chan不能为空，且非阻塞的chan没有达到上限
 	if c == nil {
 		if !block {
 			return false
@@ -180,6 +185,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		t0 = cputicks()
 	}
 
+	// 2.加互斥锁，开始发送
 	lock(&c.lock)
 
 	if c.closed != 0 {
@@ -187,13 +193,14 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		panic(plainError("send on closed channel"))
 	}
 
+	// 2.1接收队列中已经存在等待接收chan数据的Goroutine，则直接将数据发送过去
 	if sg := c.recvq.dequeue(); sg != nil {
 		// Found a waiting receiver. We pass the value we want to send
 		// directly to the receiver, bypassing the channel buffer (if any).
 		send(c, sg, ep, func() { unlock(&c.lock) }, 3)
 		return true
 	}
-
+	// 2.2 chan的缓冲区仍有空闲位置，将数据发送到缓冲区
 	if c.qcount < c.dataqsiz {
 		// Space is available in the channel buffer. Enqueue the element to send.
 		qp := chanbuf(c, c.sendx)
@@ -202,22 +209,26 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 			racerelease(qp)
 		}
 		typedmemmove(c.elemtype, qp, ep)
-		c.sendx++
+		c.sendx++ // 维护写入索引
 		if c.sendx == c.dataqsiz {
 			c.sendx = 0
 		}
-		c.qcount++
+		c.qcount++ // 增加统计数
 		unlock(&c.lock)
 		return true
 	}
-
+	// 2.3 若缓冲区已满，且chan为非阻塞，则直接返回插入失败
 	if !block {
 		unlock(&c.lock)
 		return false
 	}
 
 	// Block on the channel. Some receiver will complete our operation for us.
+	// 3.阻塞发送逻辑
+	// 3.1获取当前Goroutine指针
 	gp := getg()
+
+	// 3.2构造sudog 结构体
 	mysg := acquireSudog()
 	mysg.releasetime = 0
 	if t0 != 0 {
@@ -232,19 +243,25 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	mysg.c = c
 	gp.waiting = mysg
 	gp.param = nil
+
+	// 3.3将需要发送的数据构造为send等待队列中的一个节点并插入
 	c.sendq.enqueue(mysg)
 	// Signal to anyone trying to shrink our stack that we're about
 	// to park on a channel. The window between when this G's status
 	// changes and when we set gp.activeStackChans is not safe for
 	// stack shrinking.
 	atomic.Store8(&gp.parkingOnChan, 1)
+
+	// 3.4 挂起当前Goroutine，设置状态为waitReasonChanSend，使其阻塞等待channel可发送的时机
 	gopark(chanparkcommit, unsafe.Pointer(&c.lock), waitReasonChanSend, traceEvGoBlockSend, 2)
 	// Ensure the value being sent is kept alive until the
 	// receiver copies it out. The sudog has a pointer to the
 	// stack object, but sudogs aren't considered as roots of the
 	// stack tracer.
+	// 3.5 保证待发送的数据是活跃状态，不会被回收
 	KeepAlive(ep)
 
+	// 4.唤醒Goroutine，恢复阻塞的发送操作
 	// someone woke us up.
 	if mysg != gp.waiting {
 		throw("G waiting list is corrupted")
@@ -424,6 +441,7 @@ func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
 // Otherwise, if c is closed, zeros *ep and returns (true, false).
 // Otherwise, fills in *ep with an element and returns (true, true).
 // A non-nil ep must point to the heap or the caller's stack.
+// JazeLi ：chan的接收逻辑
 func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
 	// raceenabled: don't need to check ep, as it is always on the stack
 	// or is new memory allocated by reflect.
@@ -431,7 +449,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	if debugChan {
 		print("chanrecv: chan=", c, "\n")
 	}
-
+	// 1.前置检查
 	if c == nil {
 		if !block {
 			return
@@ -462,7 +480,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	if blockprofilerate > 0 {
 		t0 = cputicks()
 	}
-
+	// 2.加互斥锁并开始从chan中读取数据
 	lock(&c.lock)
 
 	if c.closed != 0 && c.qcount == 0 {
@@ -475,7 +493,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		}
 		return true, false
 	}
-
+	// 2.1 若chan上有阻塞等待发送的发送方，直接接收
 	if sg := c.sendq.dequeue(); sg != nil {
 		// Found a waiting sender. If buffer is size 0, receive value
 		// directly from sender. Otherwise, receive from head of queue
@@ -484,7 +502,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		recv(c, sg, ep, func() { unlock(&c.lock) }, 3)
 		return true, true
 	}
-
+	// 2.2 chan缓冲区还有空闲，将数据读取到缓冲区
 	if c.qcount > 0 {
 		// Receive directly from queue
 		qp := chanbuf(c, c.recvx)
@@ -504,13 +522,14 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		unlock(&c.lock)
 		return true, true
 	}
-
+	// 2.3 非阻塞读取，且缓冲区没有空间，返回读取失败
 	if !block {
 		unlock(&c.lock)
 		return false, false
 	}
-
+	// 3. 阻塞读取逻辑
 	// no sender available: block on this channel.
+	// 3.1 构造本次读取的对应的Sudog结构体节点
 	gp := getg()
 	mysg := acquireSudog()
 	mysg.releasetime = 0
@@ -526,14 +545,17 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	mysg.isSelect = false
 	mysg.c = c
 	gp.param = nil
+	// 3.2 将构造好的节点插入到接收等待的队列中
 	c.recvq.enqueue(mysg)
 	// Signal to anyone trying to shrink our stack that we're about
 	// to park on a channel. The window between when this G's status
 	// changes and when we set gp.activeStackChans is not safe for
 	// stack shrinking.
 	atomic.Store8(&gp.parkingOnChan, 1)
+	// 3.3 挂起当前Goroutine
 	gopark(chanparkcommit, unsafe.Pointer(&c.lock), waitReasonChanReceive, traceEvGoBlockRecv, 2)
 
+	// 4.唤醒当前阻塞的协程
 	// someone woke us up
 	if mysg != gp.waiting {
 		throw("G waiting list is corrupted")

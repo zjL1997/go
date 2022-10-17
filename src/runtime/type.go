@@ -28,10 +28,11 @@ const (
 // ../cmd/compile/internal/gc/reflect.go:/^func.dcommontype and
 // ../reflect/type.go:/^type.rtype.
 // ../internal/reflectlite/type.go:/^type.rtype.
+// JazeLi ：接口对应的类型元信息
 type _type struct {
-	size       uintptr
+	size       uintptr // 存储类型占用的内存空间
 	ptrdata    uintptr // size of memory prefix holding all pointers
-	hash       uint32
+	hash       uint32  // 快速确定类型是否相等
 	tflag      tflag
 	align      uint8
 	fieldAlign uint8

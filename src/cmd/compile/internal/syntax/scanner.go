@@ -27,6 +27,7 @@ const (
 	directives                  // call handler for directives only
 )
 
+// JazeLi ：持有当前扫描的数据源文件、启动的模式和当前被扫描到的Token
 type scanner struct {
 	source
 	mode   uint
@@ -80,13 +81,14 @@ func (s *scanner) errorAtf(offset int, format string, args ...interface{}) {
 // //-style comments are only recognized if they are at the beginning
 // of a line.
 //
+// JazeLi ：词法分析的主要执行方法
 func (s *scanner) next() {
 	nlsemi := s.nlsemi
 	s.nlsemi = false
 
 redo:
 	// skip white space
-	c := s.getr()
+	c := s.getr() //
 	for c == ' ' || c == '\t' || c == '\n' && !nlsemi || c == '\r' {
 		c = s.getr()
 	}
@@ -638,6 +640,7 @@ func (s *scanner) rune() {
 	s.tok = _Literal
 }
 
+// JazeLi ：用于解析使用双引号定义的标准字符串
 func (s *scanner) stdString() {
 	s.startLit()
 	s.bad = false
@@ -668,6 +671,7 @@ func (s *scanner) stdString() {
 	s.tok = _Literal
 }
 
+// JazeLi ：使用``声明的原始字符串解析规则
 func (s *scanner) rawString() {
 	s.startLit()
 	s.bad = false

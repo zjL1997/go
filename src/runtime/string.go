@@ -72,6 +72,7 @@ func concatstring5(buf *tmpBuf, a [5]string) string {
 
 // Buf is a fixed-size buffer for the result,
 // it is not nil if the result does not escape.
+// JazeLi ：将[]byte转换为string
 func slicebytetostring(buf *tmpBuf, b []byte) (str string) {
 	l := len(b)
 	if l == 0 {
@@ -152,6 +153,7 @@ func slicebytetostringtmp(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
 }
 
+// JazeLi ：string转换为[]byte的方法
 func stringtoslicebyte(buf *tmpBuf, s string) []byte {
 	var b []byte
 	if buf != nil && len(s) <= len(buf) {

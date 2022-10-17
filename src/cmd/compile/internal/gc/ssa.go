@@ -2730,6 +2730,7 @@ func (s *state) expr(n *Node) *ssa.Value {
 // If inplace is true, it writes the result of the OAPPEND expression n
 // back to the slice being appended to, and returns nil.
 // inplace MUST be set to false if the slice can be SSA'd.
+// JazeLi ：向slice中添加元素的函数
 func (s *state) append(n *Node, inplace bool) *ssa.Value {
 	// If inplace is false, process as expression "append(s, e1, e2, e3)":
 	//

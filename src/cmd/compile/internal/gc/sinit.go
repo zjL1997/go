@@ -569,8 +569,10 @@ func fixedlit(ctxt initContext, kind initKind, n *Node, var_ *Node, init *Nodes)
 		a = nod(OAS, a, value)
 		a = typecheck(a, ctxStmt)
 		switch kind {
+		// 分配到静态区
 		case initKindStatic:
 			genAsStatic(a)
+		// 分配到栈上
 		case initKindDynamic, initKindLocalCode:
 			a = orderStmtInPlace(a, map[string][]*Node{})
 			a = walkstmt(a)
@@ -765,6 +767,7 @@ func slicelit(ctxt initContext, n *Node, var_ *Node, init *Nodes) {
 	init.Append(a)
 }
 
+// JazeLi ：使用字面量方式声明map时会调用的方法
 func maplit(n *Node, m *Node, init *Nodes) {
 	// make the map var
 	a := nod(OMAKE, nil, nil)
@@ -913,6 +916,7 @@ func anylit(n *Node, var_ *Node, init *Nodes) {
 		anylit(n.Left, var_, init)
 
 	// 字面量数组，即arr1 := {1, 2, 3}
+	// 字面量：在等号右边的赋值量
 	case OSTRUCTLIT, OARRAYLIT:
 		if !t.IsStruct() && !t.IsArray() {
 			Fatalf("anylit: not struct/array")
@@ -955,7 +959,7 @@ func anylit(n *Node, var_ *Node, init *Nodes) {
 			a = walkexpr(a, init)
 			init.Append(a)
 		}
-
+		// 这里直接将初始化语句转换为 [3]int{1, 2, 3}
 		fixedlit(inInitFunction, initKindLocalCode, n, var_, init)
 
 	case OSLICELIT:

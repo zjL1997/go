@@ -112,19 +112,26 @@ func isEmpty(x uint8) bool {
 }
 
 // A header for a Go map.
+// JazeLi ：运行期使用于表示map的数据结构
 type hmap struct {
 	// Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
 	// Make sure this stays in sync with the compiler's definition.
-	count     int // # live cells == size of map.  Must be first (used by len() builtin)
-	flags     uint8
+	// 表示当前hash表中的元素数量
+	count int // # live cells == size of map.  Must be first (used by len() builtin)
+
+	flags uint8
+	// 表示当前hash表中的buckets数量，hash表中的桶的数量都是2的倍数，即len(buckets)== 2^B
 	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
 	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
-	hash0     uint32 // hash seed
+	// hash的种子，为hash函数的结果引入随机性，在创建hash表时确定
+	hash0 uint32 // hash seed
 
-	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
+	buckets unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
+	// 扩容之前保存buckets的字段
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
 	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
 
+	// 当某个bmap中的元素大于8个，将会创建一个新的溢出bucket存储新键值对
 	extra *mapextra // optional fields
 }
 
@@ -150,7 +157,7 @@ type bmap struct {
 	// tophash generally contains the top byte of the hash value
 	// for each key in this bucket. If tophash[0] < minTopHash,
 	// tophash[0] is a bucket evacuation state instead.
-	tophash [bucketCnt]uint8
+	tophash [bucketCnt]uint8 // map中的一个桶的大小为一个长度为8的数组
 	// Followed by bucketCnt keys and then bucketCnt elems.
 	// NOTE: packing all the keys together and then all the elems together makes the
 	// code a bit more complicated than alternating key/elem/key/elem/... but it allows
@@ -244,14 +251,17 @@ func (h *hmap) incrnoverflow() {
 
 func (h *hmap) newoverflow(t *maptype, b *bmap) *bmap {
 	var ovf *bmap
+	// 1.已经存在溢出桶了
 	if h.extra != nil && h.extra.nextOverflow != nil {
 		// We have preallocated overflow buckets available.
 		// See makeBucketArray for more details.
 		ovf = h.extra.nextOverflow
+		// 最后一个溢出桶指向正常桶，因此这里值为nil时不是最后一个溢出桶
 		if ovf.overflow(t) == nil {
 			// We're not at the end of the preallocated overflow buckets. Bump the pointer.
 			h.extra.nextOverflow = (*bmap)(add(unsafe.Pointer(ovf), uintptr(t.bucketsize)))
 		} else {
+			// 溢出桶已经是最后一个，重置当前的溢出桶为nil且标记nextOverflow为nil
 			// This is the last preallocated overflow bucket.
 			// Reset the overflow pointer on this bucket,
 			// which was set to a non-nil sentinel value.
@@ -259,13 +269,16 @@ func (h *hmap) newoverflow(t *maptype, b *bmap) *bmap {
 			h.extra.nextOverflow = nil
 		}
 	} else {
+		// 不存在溢出桶则重新创建一个
 		ovf = (*bmap)(newobject(t.bucket))
 	}
+	// 溢出桶的计数
 	h.incrnoverflow()
 	if t.bucket.ptrdata == 0 {
 		h.createOverflow()
 		*h.extra.overflow = append(*h.extra.overflow, ovf)
 	}
+	// 给正常桶设置溢出桶的逻辑
 	b.setoverflow(t, ovf)
 	return ovf
 }
@@ -300,18 +313,22 @@ func makemap_small() *hmap {
 // can be created on the stack, h and/or bucket may be non-nil.
 // If h != nil, the map can be created directly in h.
 // If h.buckets != nil, bucket pointed to can be used as the first bucket.
+// JazeLi ：运行时使用make创建map时调用的方法，在编译期的类型检查阶段执行
 func makemap(t *maptype, hint int, h *hmap) *hmap {
+	// step1：计算hash占用的内存是否溢出或者超出能分配的最大值
 	mem, overflow := math.MulUintptr(uintptr(hint), t.bucket.size)
 	if overflow || mem > maxAlloc {
 		hint = 0
 	}
 
+	// Step2：获取随机的hash种子，用于初始化hash
 	// initialize Hmap
 	if h == nil {
 		h = new(hmap)
 	}
 	h.hash0 = fastrand()
 
+	// step3：根据传入的hint计算出需要的最小桶的数量
 	// Find the size parameter B which will hold the requested # of elements.
 	// For hint < 0 overLoadFactor returns false since hint < bucketCnt.
 	B := uint8(0)
@@ -320,6 +337,7 @@ func makemap(t *maptype, hint int, h *hmap) *hmap {
 	}
 	h.B = B
 
+	// step4：使用makeBucketArray创建用于保存桶的数组
 	// allocate initial hash table
 	// if B == 0, the buckets field is allocated lazily later (in mapassign)
 	// If hint is large zeroing this memory could take a while.
@@ -341,6 +359,7 @@ func makemap(t *maptype, hint int, h *hmap) *hmap {
 // allocated by makeBucketArray with the same t and b parameters.
 // If dirtyalloc is nil a new backing array will be alloced and
 // otherwise dirtyalloc will be cleared and reused as backing array.
+// JazeLi ：根据传入的b计算出需要创建的桶数量并在内存中分配一片连续的空间用于存储数据
 func makeBucketArray(t *maptype, b uint8, dirtyalloc unsafe.Pointer) (buckets unsafe.Pointer, nextOverflow *bmap) {
 	base := bucketShift(b)
 	nbuckets := base
@@ -380,6 +399,8 @@ func makeBucketArray(t *maptype, b uint8, dirtyalloc unsafe.Pointer) (buckets un
 		// pointer is nil, then there are more available by bumping the pointer.
 		// We need a safe non-nil pointer for the last overflow bucket; just use buckets.
 		nextOverflow = (*bmap)(add(buckets, base*uintptr(t.bucketsize)))
+		// 把溢出桶里 最后一个 `bmap`的`overflow`指先正常桶的第一个`bmap`，
+		// 因此判断预分配的溢出桶是不是最后一个，可以通过其overflow是不是为nil判断
 		last := (*bmap)(add(buckets, (nbuckets-1)*uintptr(t.bucketsize)))
 		last.setoverflow(t, (*bmap)(buckets))
 	}
@@ -392,6 +413,7 @@ func makeBucketArray(t *maptype, b uint8, dirtyalloc unsafe.Pointer) (buckets un
 // NOTE: The returned pointer may keep the whole map live, so don't
 // hold onto it for very long.
 func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
+	// 1.hmap的参数校验
 	if raceenabled && h != nil {
 		callerpc := getcallerpc()
 		pc := funcPC(mapaccess1)
@@ -410,7 +432,10 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h.flags&hashWriting != 0 {
 		throw("concurrent map read and map write")
 	}
+	// 2.根据元素类型和hmap的随机种子获取该元素的hash值
 	hash := t.hasher(key, uintptr(h.hash0))
+
+	// 3.通过hash值获取当前可以所在的bmap
 	m := bucketMask(h.B)
 	b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize)))
 	if c := h.oldbuckets; c != nil {
@@ -423,10 +448,19 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 			b = oldb
 		}
 	}
+
+	// 4.拿到hash的高八位
 	top := tophash(hash)
+
+	// 5.遍历获取到的bmap，查找元素。
+	// 5.1先比较hash的高八位和桶中存储的tophash是否相同；
+	// 5.2后比较传入的key和value
 bucketloop:
+	// 遍历正常bmap未获取到，则遍历溢出桶
 	for ; b != nil; b = b.overflow(t) {
+		// 先遍历bmap的正常桶
 		for i := uintptr(0); i < bucketCnt; i++ {
+			// 先比较hash的高八位
 			if b.tophash[i] != top {
 				if b.tophash[i] == emptyRest {
 					break bucketloop
@@ -437,7 +471,9 @@ bucketloop:
 			if t.indirectkey() {
 				k = *((*unsafe.Pointer)(k))
 			}
+			// 再比较key
 			if t.key.equal(key, k) {
+				// key一致，则获取vaule数组中对应索引位置的
 				e := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
 				if t.indirectelem() {
 					e = *((*unsafe.Pointer)(e))
@@ -446,6 +482,7 @@ bucketloop:
 			}
 		}
 	}
+	// 正常和溢出bucket都未找到，则返回控制
 	return unsafe.Pointer(&zeroVal[0])
 }
 
@@ -568,6 +605,7 @@ func mapaccess2_fat(t *maptype, h *hmap, key, zero unsafe.Pointer) (unsafe.Point
 }
 
 // Like mapaccess, but allocates a slot for the key if it is not present in the map.
+// JazeLi ：map的写入函数
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h == nil {
 		panic(plainError("assignment to entry in nil map"))
@@ -584,31 +622,39 @@ func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 	if h.flags&hashWriting != 0 {
 		throw("concurrent map writes")
 	}
+	// 1.获取key对应的hash值，并设置hmap的标记位为正在写
 	hash := t.hasher(key, uintptr(h.hash0))
 
 	// Set hashWriting after calling t.hasher, since t.hasher may panic,
 	// in which case we have not actually done a write.
 	h.flags ^= hashWriting
 
+	// 2.若hmap没有buckets则初始化bucket数组，并根据hash计算出key需要插入的bucket
 	if h.buckets == nil {
 		h.buckets = newobject(t.bucket) // newarray(t.bucket, 1)
 	}
 
 again:
-	bucket := hash & bucketMask(h.B)
+	bucket := hash & bucketMask(h.B) // 根据hash的低八位值计算得到bucket的内存地址
+
+	// 3.若插入时，hmap正在扩容
 	if h.growing() {
 		growWork(t, h, bucket)
 	}
 	b := (*bmap)(unsafe.Pointer(uintptr(h.buckets) + bucket*uintptr(t.bucketsize)))
-	top := tophash(hash)
+	top := tophash(hash) // 计算hash的高八位值
 
-	var inserti *uint8
-	var insertk unsafe.Pointer
-	var elem unsafe.Pointer
+	var inserti *uint8         // inserti为目标元素所在桶中的索引
+	var insertk unsafe.Pointer // insertk为key的地址
+	var elem unsafe.Pointer    // elem为value的地址
 bucketloop:
+	// 4.遍历实现bucket的bmap，比较hash的高八位和key以判断要插入的值是否存在
+	// 若存在，则直接更新
 	for {
 		for i := uintptr(0); i < bucketCnt; i++ {
+			// hash的高八位不相同，看是不是元素为空，若为空将位置其记录在案，用于后续的插入动作
 			if b.tophash[i] != top {
+				// 寻找空位
 				if isEmpty(b.tophash[i]) && inserti == nil {
 					inserti = &b.tophash[i]
 					insertk = add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
@@ -626,6 +672,7 @@ bucketloop:
 			if !t.key.equal(key, k) {
 				continue
 			}
+			//
 			// already have a mapping for key. Update it.
 			if t.needkeyupdate() {
 				typedmemmove(t.key, k, key)
@@ -633,6 +680,7 @@ bucketloop:
 			elem = add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
 			goto done
 		}
+		// 遍历溢出桶
 		ovf := b.overflow(t)
 		if ovf == nil {
 			break
@@ -644,19 +692,24 @@ bucketloop:
 
 	// If we hit the max load factor or we have too many overflow buckets,
 	// and we're not already in the middle of growing, start growing.
+	// ************** 扩容逻辑
 	if !h.growing() && (overLoadFactor(h.count+1, h.B) || tooManyOverflowBuckets(h.noverflow, h.B)) {
 		hashGrow(t, h)
 		goto again // Growing the table invalidates everything, so try again
 	}
 
+	// 5.inserti为空表示遍历时没有写入成功，则需要分配新的溢出bmap来写
+	// 若新插入key value时，当前bucket已经满了，则创建溢出bmap，将元素插入bmap
 	if inserti == nil {
 		// all current buckets are full, allocate a new one.
+		// 创建一个新的溢出桶
 		newb := h.newoverflow(t, b)
 		inserti = &newb.tophash[0]
 		insertk = add(unsafe.Pointer(newb), dataOffset)
 		elem = add(insertk, bucketCnt*uintptr(t.keysize))
 	}
 
+	// 6.空间足够且键值对为新插入的，则为键值对规划存储的内存地址，并由typedmemmove实现键值对的移动
 	// store new key/elem at insert position
 	if t.indirectkey() {
 		kmem := newobject(t.key)
@@ -1014,16 +1067,19 @@ func mapclear(t *maptype, h *hmap) {
 	h.flags &^= hashWriting
 }
 
+// JazeLi ：hmap的扩容逻辑
 func hashGrow(t *maptype, h *hmap) {
 	// If we've hit the load factor, get bigger.
 	// Otherwise, there are too many overflow buckets,
 	// so keep the same number of buckets and "grow" laterally.
+	// 1.判断是不是因为装载因子过大导致的扩容，若是，则两倍扩容；若不是，则不扩容
 	bigger := uint8(1)
 	if !overLoadFactor(h.count+1, h.B) {
 		bigger = 0
 		h.flags |= sameSizeGrow
 	}
 	oldbuckets := h.buckets
+	// makeBucketArray创建一组新桶和预创建的溢出桶
 	newbuckets, nextOverflow := makeBucketArray(t, h.B+bigger, nil)
 
 	flags := h.flags &^ (iterator | oldIterator)
@@ -1031,10 +1087,10 @@ func hashGrow(t *maptype, h *hmap) {
 		flags |= oldIterator
 	}
 	// commit the grow (atomic wrt gc)
-	h.B += bigger
+	h.B += bigger // B+1, 也即扩容2倍
 	h.flags = flags
-	h.oldbuckets = oldbuckets
-	h.buckets = newbuckets
+	h.oldbuckets = oldbuckets // 将原数据存到hmap的oldbuckets中
+	h.buckets = newbuckets    // 将新创建的桶赋值给hmap
 	h.nevacuate = 0
 	h.noverflow = 0
 
@@ -1101,6 +1157,7 @@ func (h *hmap) oldbucketmask() uintptr {
 	return h.noldbuckets() - 1
 }
 
+// JazeLi ：真正实现扩容的方法
 func growWork(t *maptype, h *hmap, bucket uintptr) {
 	// make sure we evacuate the oldbucket corresponding
 	// to the bucket we're about to use
@@ -1117,6 +1174,7 @@ func bucketEvacuated(t *maptype, h *hmap, bucket uintptr) bool {
 	return evacuated(b)
 }
 
+// JazeLi ：map迁移过程中的核心数据结构
 // evacDst is an evacuation destination.
 type evacDst struct {
 	b *bmap          // current destination bucket
@@ -1125,20 +1183,25 @@ type evacDst struct {
 	e unsafe.Pointer // pointer to current elem storage
 }
 
+// JazeLi ：扩容后的数据迁移方法
 func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
+	// 1.先定位到oldbucket的位置
 	b := (*bmap)(add(h.oldbuckets, oldbucket*uintptr(t.bucketsize)))
-	newbit := h.noldbuckets()
+	newbit := h.noldbuckets() // 计算oldbuckets对应的B值
+
+	// 2.若oldbucket没有迁移，则根据扩容类型选择不同的扩容策略
 	if !evacuated(b) {
 		// TODO: reuse overflow buckets instead of using new ones, if there
 		// is no iterator using the old buckets.  (If !oldIterator.)
-
 		// xy contains the x and y (low and high) evacuation destinations.
+		// 2.1 evacDst用于指向需要迁移的目标bucket
 		var xy [2]evacDst
 		x := &xy[0]
 		x.b = (*bmap)(add(h.buckets, oldbucket*uintptr(t.bucketsize)))
 		x.k = add(unsafe.Pointer(x.b), dataOffset)
 		x.e = add(x.k, bucketCnt*uintptr(t.keysize))
 
+		// 2.2 当2倍扩容时，初始化两个目标bucket
 		if !h.sameSizeGrow() {
 			// Only calculate y pointers if we're growing bigger.
 			// Otherwise GC can see bad pointers.
@@ -1148,9 +1211,12 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 			y.e = add(y.k, bucketCnt*uintptr(t.keysize))
 		}
 
+		// 2.3 遍历oldbucket的正常bucket和溢出bucket，将其中的数据迁移到目的bucket
 		for ; b != nil; b = b.overflow(t) {
+			// 2.3.1 定位到kv
 			k := add(unsafe.Pointer(b), dataOffset)
 			e := add(k, bucketCnt*uintptr(t.keysize))
+
 			for i := 0; i < bucketCnt; i, k, e = i+1, add(k, uintptr(t.keysize)), add(e, uintptr(t.elemsize)) {
 				top := b.tophash[i]
 				if isEmpty(top) {
@@ -1164,11 +1230,14 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 				if t.indirectkey() {
 					k2 = *((*unsafe.Pointer)(k2))
 				}
+
 				var useY uint8
 				if !h.sameSizeGrow() {
 					// Compute hash to make our evacuation decision (whether we need
 					// to send this key/elem to bucket x or bucket y).
+					// 2.3.2 计算key的hash值，并根据hash值进行位运算，将原来一个bucket的元素迁移到两个bucket上
 					hash := t.hasher(k2, uintptr(h.hash0))
+
 					if h.flags&iterator != 0 && !t.reflexivekey() && !t.key.equal(k2, k2) {
 						// If key != key (NaNs), then the hash could be (and probably
 						// will be) entirely different from the old hash. Moreover,
@@ -1194,6 +1263,7 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 					throw("bad evacuatedN")
 				}
 
+				// 2.3.3 使用typedmemmove将需要迁移的数据迁移到指定的目标桶上
 				b.tophash[i] = evacuatedX + useY // evacuatedX + 1 == evacuatedY
 				dst := &xy[useY]                 // evacuation destination
 
@@ -1234,6 +1304,7 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 		}
 	}
 
+	// 3.对迁移进度进行统计，并在迁移完成后对就bucket进行清理
 	if oldbucket == h.nevacuate {
 		advanceEvacuationMark(h, t, newbit)
 	}

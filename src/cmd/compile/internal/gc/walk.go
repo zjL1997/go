@@ -1182,7 +1182,7 @@ opswitch:
 		} else {
 			n = callnew(n.Type.Elem())
 		}
-
+	// JazeLi ：字符串拼接时调用的函数
 	case OADDSTR:
 		n = addstr(n, init)
 

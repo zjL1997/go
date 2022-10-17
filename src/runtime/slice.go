@@ -73,6 +73,7 @@ func makeslice64(et *_type, len64, cap64 int64) unsafe.Pointer {
 // to calculate where to write new values during an append.
 // TODO: When the old backend is gone, reconsider this decision.
 // The SSA backend might prefer the new length or to return only ptr/cap and save stack space.
+// JazeLi ：slice扩容时需要调用的方法
 func growslice(et *_type, old slice, cap int) slice {
 	if raceenabled {
 		callerpc := getcallerpc()
@@ -92,6 +93,12 @@ func growslice(et *_type, old slice, cap int) slice {
 		return slice{unsafe.Pointer(&zerobase), old.len, cap}
 	}
 
+	/*
+		1. 扩容策略：
+			如果期望容量大于当前容量的两倍就会使用期望容量；
+			如果当前切片的长度小于 1024 就会将容量翻倍；
+			如果当前切片的长度大于 1024 就会每次增加 25% 的容量，直到新容量大于期望容量；
+	*/
 	newcap := old.cap
 	doublecap := newcap + newcap
 	if cap > doublecap {
@@ -119,10 +126,14 @@ func growslice(et *_type, old slice, cap int) slice {
 	// For 1 we don't need any division/multiplication.
 	// For sys.PtrSize, compiler will optimize division/multiplication into a shift by a constant.
 	// For powers of 2, use a variable shift.
+	/*
+		2.切片中元素大小对齐内存，当元素所占用的字节大小为1、8、2的倍数时，使用一下代码对齐内存
+	*/
 	switch {
 	case et.size == 1:
 		lenmem = uintptr(old.len)
 		newlenmem = uintptr(cap)
+		// roundupsize将待申请的内存向上取整，提高分配效率减少内存碎片
 		capmem = roundupsize(uintptr(newcap))
 		overflow = uintptr(newcap) > maxAlloc
 		newcap = int(capmem)
@@ -146,6 +157,7 @@ func growslice(et *_type, old slice, cap int) slice {
 		overflow = uintptr(newcap) > (maxAlloc >> shift)
 		newcap = int(capmem >> shift)
 	default:
+		// 默认内存的对齐方式为：将目标容量和元素大小相乘得到占用的内存
 		lenmem = uintptr(old.len) * et.size
 		newlenmem = uintptr(cap) * et.size
 		capmem, overflow = math.MulUintptr(et.size, uintptr(newcap))
@@ -169,7 +181,8 @@ func growslice(et *_type, old slice, cap int) slice {
 	if overflow || capmem > maxAlloc {
 		panic(errorString("growslice: cap out of range"))
 	}
-
+	// 3.若切片中元素不是指针类型，使用memclrNoHeapPointers将超出切片当前长度的位置清空
+	// 并在最后使用memmove将原数组内存中的内容拷贝到新申请的内存中
 	var p unsafe.Pointer
 	if et.ptrdata == 0 {
 		p = mallocgc(capmem, nil, false)
@@ -185,7 +198,7 @@ func growslice(et *_type, old slice, cap int) slice {
 			bulkBarrierPreWriteSrcOnly(uintptr(p), uintptr(old.array), lenmem)
 		}
 	}
-	memmove(p, old.array, lenmem)
+	memmove(p, old.array, lenmem) // 负责拷贝内存
 
 	return slice{p, old.len, newcap}
 }

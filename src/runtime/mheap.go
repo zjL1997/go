@@ -500,6 +500,8 @@ func recordspan(vh unsafe.Pointer, p unsafe.Pointer) {
 // noscan spanClass contains only noscan objects, which do not contain
 // pointers and thus do not need to be scanned by the garbage
 // collector.
+// 前7位：跨度类的ID
+// 最后1位：表示对象是否包含指针
 type spanClass uint8
 
 const (
@@ -511,6 +513,7 @@ func makeSpanClass(sizeclass uint8, noscan bool) spanClass {
 	return spanClass(sizeclass<<1) | spanClass(bool2int(noscan))
 }
 
+// 获取跨度
 func (sc spanClass) sizeclass() int8 {
 	return int8(sc >> 1)
 }

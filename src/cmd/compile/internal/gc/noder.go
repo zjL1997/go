@@ -1346,12 +1346,13 @@ func checkLangCompat(lit *syntax.BasicLit) {
 	}
 }
 
+// JazeLi ：语法解析阶段对于字符串的处理
 func (p *noder) basicLit(lit *syntax.BasicLit) Val {
 	// We don't use the errors of the conversion routines to determine
 	// if a literal string is valid because the conversion routines may
 	// accept a wider syntax than the language permits. Rely on lit.Bad
 	// instead.
-	switch s := lit.Value; lit.Kind {
+	switch s := 	.Value; lit.Kind {
 	case syntax.IntLit:
 		checkLangCompat(lit)
 		x := new(Mpint)

@@ -59,6 +59,7 @@ import (
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
+// JazeLi ：上下文接口定义
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled. Deadline returns ok==false when no deadline is
@@ -229,8 +230,10 @@ type CancelFunc func()
 //
 // Canceling this context releases resources associated with it, so code should
 // call cancel as soon as the operations running in this Context complete.
+// JazeLi ：从父context创建一个用于取消的子context
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
+	// 建立父子ctx之间的关联
 	propagateCancel(parent, &c)
 	return &c, func() { c.cancel(true, Canceled) }
 }
@@ -243,13 +246,15 @@ func newCancelCtx(parent Context) cancelCtx {
 // goroutines counts the number of goroutines ever created; for testing.
 var goroutines int32
 
-// propagateCancel arranges for child to be canceled when parent is.
+// propagateCancel arranges for child to be canceled when parent is.、
+// JazeLi ：建立父子Context之间的关联
 func propagateCancel(parent Context, child canceler) {
 	done := parent.Done()
 	if done == nil {
 		return // parent is never canceled
 	}
 
+	// 1.确定父ctx已经被取消了
 	select {
 	case <-done:
 		// parent is already canceled
@@ -262,8 +267,9 @@ func propagateCancel(parent Context, child canceler) {
 		p.mu.Lock()
 		if p.err != nil {
 			// parent has already been canceled
-			child.cancel(false, p.err)
+			child.cancel(false, p.err) // 父ctx已被取消，则同样取消子ctx
 		} else {
+			// 父上下文未被取消，则将其子ctx存储到其内
 			if p.children == nil {
 				p.children = make(map[canceler]struct{})
 			}
@@ -271,12 +277,13 @@ func propagateCancel(parent Context, child canceler) {
 		}
 		p.mu.Unlock()
 	} else {
+		// 开启一个新协程，监听父子ctx取消的信号
 		atomic.AddInt32(&goroutines, +1)
 		go func() {
 			select {
-			case <-parent.Done():
+			case <-parent.Done(): // 父被取消，则同步取消子
 				child.cancel(false, parent.Err())
-			case <-child.Done():
+			case <-child.Done(): // 子被取消，do nothing
 			}
 		}()
 	}
@@ -291,15 +298,19 @@ var cancelCtxKey int
 // parent.Done() matches that *cancelCtx. (If not, the *cancelCtx
 // has been wrapped in a custom implementation providing a
 // different done channel, in which case we should not bypass it.)
+// JazeLi ：寻找parent中最近的一个可取消的父节点
 func parentCancelCtx(parent Context) (*cancelCtx, bool) {
 	done := parent.Done()
+	// 1. 如果父上下文已经被取消了，或者不是个可取消的上下文，则直接返回
 	if done == closedchan || done == nil {
 		return nil, false
 	}
+	// 2.通过value，逐层向上查找，直到找到cancelCtx类型的context为止
 	p, ok := parent.Value(&cancelCtxKey).(*cancelCtx)
 	if !ok {
 		return nil, false
 	}
+	// 3.这里判断是否是自己的父节点，或者父节点是不是自定义的context
 	p.mu.Lock()
 	ok = p.done == done
 	p.mu.Unlock()
@@ -388,6 +399,11 @@ func (c *cancelCtx) String() string {
 
 // cancel closes c.done, cancels each of c's children, and, if
 // removeFromParent is true, removes c from its parent's children.
+// JazeLi ：cancelCtx实现了canceler接口
+/**
+* removeFromParent:是否需要将ctx从父上下文中移除
+* err：上下文被取消的错误
+ */
 func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	if err == nil {
 		panic("context: internal error: missing cancel error")
@@ -403,6 +419,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	} else {
 		close(c.done)
 	}
+	// 1.将该Context下的所有子上下文全部取消，但是不改变子ctx和父ctx的关系
 	for child := range c.children {
 		// NOTE: acquiring the child's lock while holding parent's lock.
 		child.cancel(false, err)
@@ -410,6 +427,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.children = nil
 	c.mu.Unlock()
 
+	// 2.断开父子ctx之间的关联
 	if removeFromParent {
 		removeChild(c.Context, c)
 	}
@@ -510,6 +528,7 @@ func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {
 // interface{}, context keys often have concrete type
 // struct{}. Alternatively, exported context key variables' static
 // type should be a pointer or interface.
+// JazeLi ：创建一个可以在父子Ctx之间传递值的Context
 func WithValue(parent Context, key, val interface{}) Context {
 	if key == nil {
 		panic("nil key")

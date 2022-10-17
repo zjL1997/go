@@ -529,6 +529,7 @@ func cpuinit() {
 //	call runtime·mstart
 //
 // The new G calls runtime·main.
+// JazeLi ：调度器初始化的过程
 func schedinit() {
 	// raceinit must be the first call to race detector.
 	// In particular, it must be done before mallocinit below calls racemapshadow.
@@ -2496,7 +2497,9 @@ func injectglist(glist *gList) {
 
 // One round of scheduler: find a runnable goroutine and execute it.
 // Never returns.
+// JazeLi ：线程模型调度器
 func schedule() {
+	// 1.获取当前正在运行的Goroutine
 	_g_ := getg()
 
 	if _g_.m.locks != 0 {

@@ -329,7 +329,6 @@ JazeLi Note：校验入参
 	1、验证访问数组的索引：用于在编译期的静态类型检查中判断数组越界
 	2、校验切片大小及容量：使用make关键字创建切片时会经过该校验过程
 */
-
 func typecheck1(n *Node, top int) (res *Node) {
 	if enableTrace && trace {
 		defer tracePrint("typecheck1", n)(&res)
@@ -1700,6 +1699,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 			return n
 		// 使用make创建slice的校验
 		case TSLICE:
+			// 确保make创建slice时，传入了len并确保cap大于len
 			if i >= len(args) {
 				yyerror("missing len argument to make(%v)", t)
 				n.Type = nil
@@ -2791,10 +2791,12 @@ func typecheckcomplit(n *Node) (res *Node) {
 			return n
 		}
 		elemType := n.Right.Right.Type
-
+		// 1. 通过遍历元素的方式来计算数组中元素的数量
 		length := typecheckarraylit(elemType, -1, n.List.Slice(), "array literal")
 
 		n.Op = OARRAYLIT
+
+		// 2. 创建数组
 		n.Type = types.NewArray(elemType, length)
 		n.Right = nil
 		return n
